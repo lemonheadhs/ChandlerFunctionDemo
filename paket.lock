@@ -1,0 +1,15 @@
+RESTRICTION: == net472
+NUGET
+  remote: https://www.nuget.org/api/v2
+    Microsoft.Azure.KeyVault.Core (3.0)
+    Microsoft.Azure.WebJobs (2.2)
+      Microsoft.Azure.WebJobs.Core (2.2)
+      Microsoft.Extensions.Logging.Abstractions (>= 1.1.1)
+      Newtonsoft.Json (>= 9.0.1)
+      WindowsAzure.Storage (>= 7.2.1)
+    Microsoft.Azure.WebJobs.Core (2.2)
+    Microsoft.Extensions.Logging.Abstractions (2.1.1)
+    Newtonsoft.Json (11.0.2)
+    WindowsAzure.Storage (9.3)
+      Microsoft.Azure.KeyVault.Core (>= 1.0)
+      Newtonsoft.Json (>= 10.0.2)

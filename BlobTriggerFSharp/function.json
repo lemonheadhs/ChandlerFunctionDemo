@@ -1,0 +1,19 @@
+{
+  "disabled": false,
+  "bindings": [
+    {
+      "name": "myBlob",
+      "type": "blobTrigger",
+      "direction": "in",
+      "path": "samples-workitems/{name}",
+      "connection": "SourceStorage"
+    },
+    {
+      "name": "destBlob",
+      "type": "blob",
+      "path": "backupdest/{name}-Copy",
+      "connection": "DestStorage",
+      "direction": "inout"
+    }
+  ]
+}
