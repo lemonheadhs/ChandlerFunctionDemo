@@ -2,9 +2,11 @@
   "disabled": false,
   "bindings": [
     {
-      "type": "eventGridTrigger",
-      "name": "eventGridEvent",
-      "direction": "in"
+      "name": "myBlob",
+      "type": "blobTrigger",
+      "direction": "in",
+      "path": "samples-workitems/{name}",
+      "connection": "SourceStorage"
     },
     {
       "name": "destBlob",
