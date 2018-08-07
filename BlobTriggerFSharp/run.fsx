@@ -1,6 +1,9 @@
 #if !COMPILED
 #load "../.paket/load/net472/main.group.fsx"
 #endif
+// #r "../bin/Microsoft.Azure.KeyVault.Core.dll"
+// #r "../bin/Newtonsoft.Json.dll"
+// #r "../bin/Microsoft.WindowsAzure.Storage.dll"
 
 open System
 open System.IO
@@ -94,17 +97,24 @@ let getSourceBlob bn =
     |> Option.map (fun h -> h :?> CloudBlockBlob)
 
 
-let Run(eventGridEvent: JObject, log: TraceWriter) =
+let Run(eventGridEventStr: string, log: TraceWriter) =
+    let eventGridEvent = JObject.Parse(eventGridEventStr)
     log.Info(eventGridEvent.ToString())
     let desiredTopic = Environment.GetEnvironmentVariable("DesiredTopic")
     if eventGridEvent.["topic"].ToString() = desiredTopic && eventGridEvent.["eventType"].ToString() = "Microsoft.Storage.BlobDeleted" then
+        log.Info("before get table..")
         let table = getStubTable()
+        log.Info("after got table..")
         let blobUrl = eventGridEvent.["data"].["url"].ToString()
+        log.Info("retrieving stub..")
         let stub = retrieveStub table blobUrl
+        log.Info("retrieved stub..")
         if stub = null then
             let blobName, fileName = eventGridEvent |> retrieveBlobNameFileName
+            log.Info(sprintf "bn: %s; fn: %s" blobName fileName)
             match getSourceBlob blobName with
             | Some cloudBlob ->
+                log.Info(cloudBlob.Uri.ToString())
                 cloudBlob.Undelete()
                 blobUrl |> addStub table |> ignore
                 let destBlob = getDestBlob(blobName, fileName)
@@ -112,6 +122,7 @@ let Run(eventGridEvent: JObject, log: TraceWriter) =
                 cloudBlob.Delete()
             | _ -> ()
         else
+            log.Info("delete stub branch..")
             deleteStub table stub |> ignore
 
 (*
