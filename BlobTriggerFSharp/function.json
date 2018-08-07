@@ -5,13 +5,6 @@
       "type": "eventGridTrigger",
       "name": "eventGridEvent",
       "direction": "in"
-    },
-    {
-      "name": "destBlob",
-      "type": "blob",
-      "path": "backupdest/{name}-Copy",
-      "connection": "DestStorage",
-      "direction": "inout"
     }
   ]
 }

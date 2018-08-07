@@ -51,8 +51,50 @@ let deleteStub (table: CloudTable) stub =
     |> table.Execute
 
 
-let Run(eventGridEvent: JObject, log: TraceWriter, destBlob: CloudBlockBlob) =
-    log.Verbose(sprintf "F# EventGrid trigger function processed blob\n Event: %s \n " (eventGridEvent.ToString()))   
+let optionDefaultValue<'a> (v: 'a) (op: 'a option) =
+    match op with
+    | Some a -> a
+    | None -> v
+
+open System.Text.RegularExpressions
+
+let retrieveBlobNameFileName (eventInfo: JObject) =
+    let unknownNames = "unknown-blob-name", "unknown-file-name"
+    let subject = eventInfo.["subject"] |> Option.ofObj |> Option.map (fun o -> o.ToString()) |> optionDefaultValue null
+    if String.IsNullOrEmpty(subject) then
+        unknownNames
+    else
+        let regx = Regex("/blobs/(?<blobName>\S+)$")
+        let result = regx.Matches(subject)
+        result.Count > 0
+        |> function | true -> Some result.[0] | false -> None
+        |> Option.map (fun r -> 
+            let bn = r.Groups.["blobName"].Value
+            let i = bn.LastIndexOf('/')
+            let filename = bn.Substring(i + 1)
+            bn, filename)
+        |> optionDefaultValue unknownNames
+
+let getDestBlob (bn: string, fln: string) =
+    let connStr = Environment.GetEnvironmentVariable("DestStorage")
+    let account = CloudStorageAccount.Parse(connStr)
+    account.CreateCloudBlobClient()
+    |> fun bc -> bc.GetContainerReference("destBlob")
+    |> fun c -> c.GetBlockBlobReference(sprintf "%s/%s/%s" bn (DateTime.UtcNow.ToString("yyyy-MM-ddTHH_mm_ss")) fln)
+
+let getSourceBlob bn =
+    let connStr = Environment.GetEnvironmentVariable("SourceStorage")
+    let container =
+        CloudStorageAccount.Parse(connStr)
+        |> fun a -> a.CreateCloudBlobClient()
+        |> fun bc -> bc.GetContainerReference("samples-workitems")
+        
+    container.ListBlobs(prefix = bn, blobListingDetails = BlobListingDetails.Deleted)
+    |> Seq.tryHead
+    |> Option.map (fun h -> h :?> CloudBlockBlob)
+
+
+let Run(eventGridEvent: JObject, log: TraceWriter) =
     log.Info(eventGridEvent.ToString())
     let desiredTopic = Environment.GetEnvironmentVariable("DesiredTopic")
     if eventGridEvent.["topic"].ToString() = desiredTopic && eventGridEvent.["eventType"].ToString() = "Microsoft.Storage.BlobDeleted" then
@@ -60,11 +102,15 @@ let Run(eventGridEvent: JObject, log: TraceWriter, destBlob: CloudBlockBlob) =
         let blobUrl = eventGridEvent.["data"].["url"].ToString()
         let stub = retrieveStub table blobUrl
         if stub = null then
-            let cloudBlob = CloudBlockBlob(Uri(blobUrl))
-            cloudBlob.Undelete()
-            blobUrl |> addStub table |> ignore
-            destBlob.StartCopy(Uri(blobUrl)) |> ignore
-            cloudBlob.Delete()
+            let blobName, fileName = eventGridEvent |> retrieveBlobNameFileName
+            match getSourceBlob blobName with
+            | Some cloudBlob ->
+                cloudBlob.Undelete()
+                blobUrl |> addStub table |> ignore
+                let destBlob = getDestBlob(blobName, fileName)
+                destBlob.StartCopy(Uri(blobUrl)) |> ignore
+                cloudBlob.Delete()
+            | _ -> ()
         else
             deleteStub table stub |> ignore
 
@@ -79,4 +125,3 @@ let Run(eventGridEvent: JObject, log: TraceWriter, destBlob: CloudBlockBlob) =
     [ ] 7. deploy to Azure with continuous deployment
 
 *)
-
