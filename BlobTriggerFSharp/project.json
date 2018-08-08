@@ -2,8 +2,8 @@
     "frameworks": {
       "net46":{
         "dependencies": {
-          "Microsoft.Azure.WebJobs": "2.2",
-          "WindowsAzure.Storage": "9.3"
+          "Http.fs": "4.0.2",
+          "Hopac": "0.3.14"
         }
       }
      }

@@ -1,4 +1,5 @@
 #if !COMPILED
+#load "../.paket/load/net472/Hopac.fsx"
 #load "../.paket/load/net472/main.group.fsx"
 #endif
 // #r "../bin/Microsoft.Azure.KeyVault.Core.dll"
@@ -13,6 +14,9 @@ open Microsoft.WindowsAzure.Storage.Table
 open Microsoft.WindowsAzure.Storage.Auth
 open Microsoft.WindowsAzure.Storage.Blob
 open Newtonsoft.Json.Linq
+open Hopac
+open HttpFs.Logging
+open HttpFs.Client
 
 let Run_WithBlobStorageBinding_Obsoleted(myBlob: Stream, name: string, log: TraceWriter, destBlob: CloudBlockBlob) =
     // some knowledge learned when experimenting Azure Blobs:
@@ -59,11 +63,16 @@ let optionDefaultValue<'a> (v: 'a) (op: 'a option) =
     | Some a -> a
     | None -> v
 
+let optionOfObj o =
+    match o with
+    | null -> None
+    | v -> Some v
+
 open System.Text.RegularExpressions
 
 let retrieveBlobNameFileName (eventInfo: JObject) =
     let unknownNames = "unknown-blob-name", "unknown-file-name"
-    let subject = eventInfo.["subject"] |> Option.ofObj |> Option.map (fun o -> o.ToString()) |> optionDefaultValue null
+    let subject = eventInfo.["subject"] |> optionOfObj |> Option.map (fun o -> o.ToString()) |> optionDefaultValue null
     if String.IsNullOrEmpty(subject) then
         unknownNames
     else
@@ -85,16 +94,30 @@ let getDestBlob (bn: string, fln: string) =
     |> fun bc -> bc.GetContainerReference("destBlob")
     |> fun c -> c.GetBlockBlobReference(sprintf "%s/%s/%s" bn (DateTime.UtcNow.ToString("yyyy-MM-ddTHH_mm_ss")) fln)
 
-let getSourceBlob bn =
+let getSourceBlob blobName =
     let connStr = Environment.GetEnvironmentVariable("SourceStorage")
-    let container =
-        CloudStorageAccount.Parse(connStr)
-        |> fun a -> a.CreateCloudBlobClient()
-        |> fun bc -> bc.GetContainerReference("samples-workitems")
-        
-    container.ListBlobs(prefix = bn, blobListingDetails = BlobListingDetails.Deleted)
-    |> Seq.tryHead
-    |> Option.map (fun h -> h :?> CloudBlockBlob)
+    CloudStorageAccount.Parse(connStr)
+    |> fun a -> a.CreateCloudBlobClient()
+    |> fun bc -> bc.GetContainerReference("samples-workitems")
+    |> fun c -> c.GetBlockBlobReference blobName
+
+let getBlobSAS (blob: CloudBlockBlob) =
+    let policy = SharedAccessBlobPolicy()
+    policy.SharedAccessStartTime <- Nullable DateTimeOffset.UtcNow
+    policy.SharedAccessExpiryTime <- Nullable (DateTimeOffset.UtcNow.AddHours(1.))
+    policy.Permissions <- SharedAccessBlobPermissions.List ||| SharedAccessBlobPermissions.Delete ||| SharedAccessBlobPermissions.Write
+    blob.GetSharedAccessSignature(policy)
+
+let undeleteBlob (blob: CloudBlockBlob) = job {
+    let sas = getBlobSAS blob
+    let uri = Uri(blob.Uri, (sprintf "%s&comp=undelete" sas))
+    let request = 
+        Request.create Put uri
+        |> Request.setHeader (Custom ("x-ms-version", "2018-03-28"))
+    let! resp = getResponse request
+    return resp.statusCode = 200
+}
+
 
 
 let Run(eventGridEventStr: string, log: TraceWriter) =
@@ -112,15 +135,17 @@ let Run(eventGridEventStr: string, log: TraceWriter) =
         if stub = null then
             let blobName, fileName = eventGridEvent |> retrieveBlobNameFileName
             log.Info(sprintf "bn: %s; fn: %s" blobName fileName)
-            match getSourceBlob blobName with
-            | Some cloudBlob ->
-                log.Info(cloudBlob.Uri.ToString())
-                cloudBlob.Undelete()
-                blobUrl |> addStub table |> ignore
-                let destBlob = getDestBlob(blobName, fileName)
-                destBlob.StartCopy(Uri(blobUrl)) |> ignore
-                cloudBlob.Delete()
-            | _ -> ()
+            let cloudBlob = getSourceBlob blobName
+            log.Info(cloudBlob.Uri.ToString())
+            job {
+                let! success = undeleteBlob cloudBlob
+                if success then
+                    blobUrl |> addStub table |> ignore
+                    let destBlob = getDestBlob(blobName, fileName)
+                    destBlob.StartCopy(Uri(blobUrl)) |> ignore
+                    cloudBlob.Delete()
+            } |> Hopac.run
+            
         else
             log.Info("delete stub branch..")
             deleteStub table stub |> ignore
