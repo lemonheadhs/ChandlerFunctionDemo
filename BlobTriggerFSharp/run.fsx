@@ -1,10 +1,15 @@
 #if !COMPILED
 #load "../.paket/load/net472/Hopac.fsx"
 #load "../.paket/load/net472/main.group.fsx"
+#else
+#r "Microsoft.WindowsAzure.Storage"
+#r "Newtonsoft.Json"
 #endif
 // #r "../bin/Microsoft.Azure.KeyVault.Core.dll"
 // #r "../bin/Newtonsoft.Json.dll"
 // #r "../bin/Microsoft.WindowsAzure.Storage.dll"
+
+
 
 open System
 open System.IO
