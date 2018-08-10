@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "TableAccountStorage": "UseDevelopmentStorage=true",
+    "SourceStorage": "UseDevelopmentStorage=true",
+    "SourceContainerName": "samples-workitems",
+    "DestStorage": "UseDevelopmentStorage=true",
+    "DestContainerName": "backupdest",
+    "DesiredTopic": "/subscriptions/41c3fe45-b5a3-4668-9936-efbe58bac8b8/resourceGroups/chandlerfunctiondemo/providers/Microsoft.Storage/storageAccounts/chandlerfunctionsource"
+  }
+}

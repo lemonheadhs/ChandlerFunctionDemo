@@ -38,6 +38,8 @@ let Run_WithBlobStorageBinding_Obsoleted(myBlob: Stream, name: string, log: Trac
     log.Info("after action..")    
 
 
+// Utils and Constants
+
 let optionDefaultValue<'a> (v: 'a) (op: 'a option) =
     match op with
     | Some a -> a
@@ -48,11 +50,25 @@ let optionOfObj o =
     | null -> None
     | v -> Some v
 
+let envVar key = Environment.GetEnvironmentVariable key
+
+module Keys =
+    let SourceStorage = "SourceStorage"
+    let SourceContainerName = "SourceContainerName"
+    let DesiredTopic = "DesiredTopic"
+    let DestStorage = "DestStorage"
+    let DestContainerName = "DestContainerName"
+    let TableAccountStorage = "TableAccountStorage"
+
+
+// stub operations
+
 let getStubTable() =
-    let tableAccountConnStr = Environment.GetEnvironmentVariable("TableAccountStorage")
-    let storageAccount = CloudStorageAccount.Parse(tableAccountConnStr)
-    let tableClient = storageAccount.CreateCloudTableClient()
-    let table = tableClient.GetTableReference("deletionStubTable")
+    let tableAccountConnStr = Keys.TableAccountStorage |> envVar
+    let table = 
+        CloudStorageAccount.Parse(tableAccountConnStr)
+            .CreateCloudTableClient()
+            .GetTableReference("deletionStubTable")
     table.CreateIfNotExists() |> ignore
     table
 
@@ -87,6 +103,7 @@ let deleteStub (table: CloudTable) stub =
     |> table.Execute
 
 
+// blob operations
 
 open System.Text.RegularExpressions
 
@@ -108,20 +125,22 @@ let retrieveBlobNameFileName (eventInfo: JObject) =
         |> optionDefaultValue unknownNames
 
 let getDestBlob (bn: string, fln: string) =
-    let connStr = Environment.GetEnvironmentVariable("DestStorage")
-    let destContainerName = Environment.GetEnvironmentVariable("DestContainerName")
+    let connStr, destContainerName = 
+        envVar Keys.DestStorage,
+        envVar Keys.DestContainerName
     let account = CloudStorageAccount.Parse(connStr)
     account.CreateCloudBlobClient()
-    |> fun bc -> bc.GetContainerReference(destContainerName)
-    |> fun c -> c.GetBlockBlobReference(sprintf "%s/%s/%s" bn (DateTime.UtcNow.ToString("yyyy-MM-ddTHH_mm_ss")) fln)
+        .GetContainerReference(destContainerName)
+        .GetBlockBlobReference(sprintf "%s/%s/%s" bn (DateTime.UtcNow.ToString("yyyy-MM-ddTHH_mm_ss")) fln)
 
 let getSourceBlob blobName =
-    let connStr = Environment.GetEnvironmentVariable("SourceStorage")
-    let sourceContainerName = Environment.GetEnvironmentVariable("SourceContainerName")
+    let connStr, sourceContainerName = 
+        envVar Keys.SourceStorage,
+        envVar Keys.SourceContainerName
     CloudStorageAccount.Parse(connStr)
-    |> fun a -> a.CreateCloudBlobClient()
-    |> fun bc -> bc.GetContainerReference(sourceContainerName)
-    |> fun c -> c.GetBlockBlobReference blobName
+        .CreateCloudBlobClient()
+        .GetContainerReference(sourceContainerName)
+        .GetBlockBlobReference blobName
 
 let getBlobSAS (blob: CloudBlockBlob) =
     let policy = SharedAccessBlobPolicy()
@@ -141,11 +160,12 @@ let undeleteBlob (blob: CloudBlockBlob) = job {
 }
 
 
+// main func
 
 let Run(eventGridEventStr: string, log: TraceWriter) =
     let eventGridEvent = JObject.Parse(eventGridEventStr)
     log.Info(eventGridEvent.ToString())
-    let desiredTopic = Environment.GetEnvironmentVariable("DesiredTopic")
+    let desiredTopic = Keys.DesiredTopic |> envVar
     if eventGridEvent.["topic"].ToString() = desiredTopic && eventGridEvent.["eventType"].ToString() = "Microsoft.Storage.BlobDeleted" then
         let table = getStubTable()
         let blobUrl = eventGridEvent.["data"].["url"].ToString()
@@ -158,7 +178,7 @@ let Run(eventGridEventStr: string, log: TraceWriter) =
                 if success then
                     blobUrl |> addStub table |> ignore
                     let destBlob = getDestBlob(blobName, fileName)
-                    destBlob.StartCopy(Uri(blobUrl)) |> ignore                    
+                    destBlob.StartCopy(Uri blobUrl) |> ignore                    
                     cloudBlob.Delete()
             } |> Hopac.run
             
