@@ -107,13 +107,27 @@ let deleteStub (table: CloudTable) stub =
 
 open System.Text.RegularExpressions
 
+let retrieveContainerName (eventInfo: JObject) =
+    eventInfo.["subject"] |> optionOfObj 
+    |> Option.bind (fun o -> 
+        let raw = o.ToString()
+        String.IsNullOrEmpty(raw)
+        |> function | true -> None | false -> Some raw)
+    |> Option.bind (fun subject ->
+        let regx = Regex("/containers/(?<containerName>[a-z0-9_-]+)/blobs/")
+        let result = regx.Matches(subject)
+        result.Count > 0
+        |> function | true -> Some result.[0] | false -> None)
+    |> Option.map (fun r -> r.Groups.["containerName"].Value)
+    |> optionDefaultValue null
+
 let retrieveBlobNameFileName (eventInfo: JObject) =
     let unknownNames = "unknown-blob-name", "unknown-file-name"
     let subject = eventInfo.["subject"] |> optionOfObj |> Option.map (fun o -> o.ToString()) |> optionDefaultValue null
     if String.IsNullOrEmpty(subject) then
         unknownNames
     else
-        let regx = Regex("/blobs/(?<blobName>\S+)$")
+        let regx = Regex("/blobs/(?<blobName>.+)$")
         let result = regx.Matches(subject)
         result.Count > 0
         |> function | true -> Some result.[0] | false -> None
@@ -165,8 +179,14 @@ let undeleteBlob (blob: CloudBlockBlob) = job {
 let Run(eventGridEventStr: string, log: TraceWriter) =
     let eventGridEvent = JObject.Parse(eventGridEventStr)
     log.Info(eventGridEvent.ToString())
-    let desiredTopic = Keys.DesiredTopic |> envVar
-    if eventGridEvent.["topic"].ToString() = desiredTopic && eventGridEvent.["eventType"].ToString() = "Microsoft.Storage.BlobDeleted" then
+    let desiredTopic, sourceContainerName = 
+        Keys.DesiredTopic |> envVar,
+        Keys.SourceContainerName |> envVar
+    let containerName = retrieveContainerName eventGridEvent
+    
+    if eventGridEvent.["topic"].ToString() = desiredTopic 
+    && eventGridEvent.["eventType"].ToString() = "Microsoft.Storage.BlobDeleted"
+    && containerName = sourceContainerName then
         let table = getStubTable()
         let blobUrl = eventGridEvent.["data"].["url"].ToString()
         let stub = retrieveStub table blobUrl
