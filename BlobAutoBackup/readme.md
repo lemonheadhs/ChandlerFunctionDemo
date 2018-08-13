@@ -10,5 +10,15 @@ It's better for us not to touch the existing running app. Instead, a little piec
 
 This is just a simple small `Azure Function` in F#. It can subscribe the source container's "BlobDelete" event delivered by `Event Grid`. The storage account of the source container should enable `Soft Delete`, thus our function can then temporarily "undelete" the file and copy it to the destination container, then delete the file again. We need to store the action info in a table, so when the second time the file is being deleted, we bypass the backup process. Yeah, sounds hacky, but it can do its job.
 
-<TODO> AppSettings Explain..
+
+## AppSettings
+
++ TableAccountStorage: The connection string for the Azure Table
++ SourceStorage: The connection string for the source blob container
++ SourceContainerName: As what the name suggests
++ DestStorage: The connection string for the backup destination blob container
++ DestContainerName: As what the name suggests
++ DesiredTopic: The event topic you want to listen on. Used to filter out those event sources not interest you.
+
+
 
